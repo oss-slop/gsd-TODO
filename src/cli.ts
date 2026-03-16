@@ -29,6 +29,8 @@ interface CliFlags {
   continue?: boolean
   noSession?: boolean
   model?: string
+  role?: 'coder' | 'reviewer'
+  graphDir?: string
   listModels?: string | true
   extensions: string[]
   appendSystemPrompt?: string
@@ -67,6 +69,15 @@ function parseCliArgs(argv: string[]): CliFlags {
       flags.noSession = true
     } else if (arg === '--model' && i + 1 < args.length) {
       flags.model = args[++i]
+    } else if (arg === '--role' && i + 1 < args.length) {
+      const r = args[++i]
+      if (r === 'coder' || r === 'reviewer') flags.role = r
+      else {
+        process.stderr.write(`Unknown role "${r}". Must be "coder" or "reviewer".\n`)
+        process.exit(1)
+      }
+    } else if (arg === '--graph-dir' && i + 1 < args.length) {
+      flags.graphDir = args[++i]
     } else if (arg === '--extension' && i + 1 < args.length) {
       flags.extensions.push(args[++i])
     } else if (arg === '--append-system-prompt' && i + 1 < args.length) {
@@ -85,6 +96,8 @@ function parseCliArgs(argv: string[]): CliFlags {
       process.stdout.write('  --mode <text|json|rpc>   Output mode (default: interactive)\n')
       process.stdout.write('  --print, -p              Single-shot print mode\n')
       process.stdout.write('  --continue, -c           Resume the most recent session\n')
+      process.stdout.write('  --role <coder|reviewer>   Set agent role (default: coder)\n')
+      process.stdout.write('  --graph-dir <path>        Graph storage path (default: .gsd/graph)\n')
       process.stdout.write('  --model <id>             Override model (e.g. claude-opus-4-6)\n')
       process.stdout.write('  --no-session             Disable session persistence\n')
       process.stdout.write('  --extension <path>       Load additional extension\n')
@@ -105,6 +118,10 @@ function parseCliArgs(argv: string[]): CliFlags {
 
 const cliFlags = parseCliArgs(process.argv)
 const isPrintMode = cliFlags.print || cliFlags.mode !== undefined
+
+// Expose role to extensions via env var (default: coder)
+process.env.GSD_ROLE = cliFlags.role || 'coder'
+if (cliFlags.graphDir) process.env.GSD_GRAPH_DIR = cliFlags.graphDir
 
 // `gsd config` — replay the setup wizard and exit
 if (cliFlags.messages[0] === 'config') {

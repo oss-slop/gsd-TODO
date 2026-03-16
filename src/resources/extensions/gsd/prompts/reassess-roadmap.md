@@ -10,7 +10,7 @@ Your working directory is `{{workingDirectory}}`. All file reads, writes, and sh
 
 A slice just completed. The **complete-slice agent** verified the work and wrote a slice summary. You decide whether the remaining roadmap still makes sense given what was actually built. If you change the roadmap, the next slice's **researcher** and **planner** agents work from your updated version. If you confirm it's fine, the pipeline moves to the next slice immediately.
 
-Your assessment should be fast and decisive. Most of the time the plan is still good.
+Your assessment should be fast and decisive. Most of the time the plan is still good. But if the completed slice summary reveals that claims were made without matching evidence, or stubs were left while requirements were marked complete, flag that — it's a signal the plan needs correction, not just continuation.
 
 All relevant context has been preloaded below — the current roadmap, completed slice summary, project state, and decisions are inlined. Start working immediately without re-reading these files.
 

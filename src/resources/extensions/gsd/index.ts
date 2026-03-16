@@ -26,6 +26,8 @@ import type {
 import { createBashTool, createWriteTool, createReadTool, createEditTool, isToolCallEventType } from "@gsd/pi-coding-agent";
 
 import { registerGSDCommand, loadToolApiKeys } from "./commands.js";
+import { createCoderTools } from "./graph/coder-tools.js";
+import { createReviewerTools } from "./graph/reviewer-tools.js";
 import { registerExitCommand } from "./exit-command.js";
 import { registerWorktreeCommand, getWorktreeOriginalCwd, getActiveWorktreeName } from "./worktree-command.js";
 import { saveFile, formatContinue, loadFile, parseContinue, parseSummary, loadActiveOverrides, formatOverridesSection } from "./files.js";
@@ -49,7 +51,7 @@ import {
   buildSliceFileName, buildMilestoneFileName, gsdRoot, resolveMilestonePath,
 } from "./paths.js";
 import { Key } from "@gsd/pi-tui";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { existsSync } from "node:fs";
 import { shortcutDesc } from "../shared/terminal.js";
 import { Text } from "@gsd/pi-tui";
@@ -188,6 +190,20 @@ export default function (pi: ExtensionAPI) {
   };
   pi.registerTool(dynamicEdit as any);
 
+  // ── Graph tools: register role-specific tools ─────────────────────────
+  const gsdRole = process.env.GSD_ROLE || "coder";
+  const configuredGraphDir = process.env.GSD_GRAPH_DIR;
+  const graphDir = configuredGraphDir
+    ? (isAbsolute(configuredGraphDir) ? configuredGraphDir : join(process.cwd(), configuredGraphDir))
+    : join(process.cwd(), ".gsd", "graph");
+  if (gsdRole === "reviewer") {
+    const reviewerTools = createReviewerTools(graphDir, `reviewer-${Date.now()}`);
+    for (const tool of reviewerTools) pi.registerTool(tool as any);
+  } else {
+    const coderTools = createCoderTools(graphDir, `coder-${Date.now()}`);
+    for (const tool of coderTools) pi.registerTool(tool as any);
+  }
+
   // ── session_start: render branded GSD header + load tool keys + remote status ──
   pi.on("session_start", async (_event, ctx) => {
     // Theme access throws in RPC mode (no TUI) — header is decorative, skip it
@@ -255,7 +271,9 @@ export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event, ctx: ExtensionContext) => {
     if (!existsSync(join(process.cwd(), ".gsd"))) return;
 
-    const systemContent = loadPrompt("system");
+    const role = process.env.GSD_ROLE || "coder";
+    const rolePromptName = role === "reviewer" ? "system-reviewer" : "system-coder";
+    const systemContent = loadPrompt("system") + "\n\n" + loadPrompt(rolePromptName);
     const loadedPreferences = loadEffectiveGSDPreferences();
     let preferenceBlock = "";
     if (loadedPreferences) {
@@ -479,6 +497,19 @@ export default function (pi: ExtensionAPI) {
       isDepthVerified(),
     );
     if (result.block) return result;
+  });
+
+  // ── tool_call: block write/edit/bash for reviewer role ──────────────────
+  pi.on("tool_call", async (event) => {
+    if ((process.env.GSD_ROLE || "coder") !== "reviewer") return;
+    const blocked = ["write", "edit", "bash"];
+    if (blocked.includes(event.toolName)) {
+      // Allow graph_* tools (they have their own names) — block raw file/shell tools
+      return {
+        block: true,
+        reason: `Reviewer role cannot use "${event.toolName}". Reviewers have read-only access to the codebase. Use graph_* tools to manage the task graph.`,
+      };
+    }
   });
 
   // ── tool_result: persist discussion exchanges & detect depth gate ──────
