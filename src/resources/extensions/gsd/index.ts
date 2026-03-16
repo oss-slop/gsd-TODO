@@ -84,10 +84,12 @@ export function shouldBlockContextWrite(
 }
 
 const REVIEWER_WRITABLE_DIRS = [".gsd", "docs"];
+const REVIEWER_BLOCKED_WRITE_DIRS = [".gsd/graph"];
 const REVIEWER_BLOCKED_TOOL_NAMES = new Set([
   "apply_patch",
   "bg_shell",
   "async_bash",
+  "subagent",
 ]);
 const REVIEWER_SAFE_COMMANDS = new Set([
   "rg", "grep", "find", "ls", "cat", "head", "tail", "wc", "cut", "sort", "uniq",
@@ -107,11 +109,26 @@ function isWithinPath(rootAbs: string, targetAbs: string): boolean {
 
 export function isReviewerWritablePath(inputPath: string, cwd: string): boolean {
   const targetAbs = resolve(cwd, inputPath);
+  for (const dir of REVIEWER_BLOCKED_WRITE_DIRS) {
+    const blockedRootAbs = resolve(cwd, dir);
+    if (isWithinPath(blockedRootAbs, targetAbs)) return false;
+  }
   for (const dir of REVIEWER_WRITABLE_DIRS) {
     const rootAbs = resolve(cwd, dir);
     if (isWithinPath(rootAbs, targetAbs)) return true;
   }
   return false;
+}
+
+export function getReviewerWriteBlockReason(inputPath: string, cwd: string): string {
+  const targetAbs = resolve(cwd, inputPath);
+  for (const dir of REVIEWER_BLOCKED_WRITE_DIRS) {
+    const blockedRootAbs = resolve(cwd, dir);
+    if (isWithinPath(blockedRootAbs, targetAbs)) {
+      return "ROLE-BOUNDARY BLOCKED: reviewer cannot write task-graph records via write/edit under .gsd/graph/. Run graph_emit_handoff with attemptedAction/requiredRole/reason/payload, then stop. Task/blocker creation requires coder authority.";
+    }
+  }
+  return `Reviewer can only modify coordination artifacts under .gsd/ or docs/. Path blocked: ${inputPath}`;
 }
 
 function firstExecutableToken(tokens: string[]): { token: string; index: number } | null {
@@ -256,6 +273,12 @@ export function shouldBlockReviewerTool(toolName: string): { block: boolean; rea
     return {
       block: true,
       reason: "Reviewer cannot use async_bash. Use bash for read/verify commands only.",
+    };
+  }
+  if (toolName === "subagent") {
+    return {
+      block: true,
+      reason: "Reviewer cannot use subagent. Do not delegate to bypass role boundaries; report a role-boundary blocker instead.",
     };
   }
   return { block: true, reason: `Reviewer cannot use tool "${toolName}".` };
@@ -691,7 +714,7 @@ export default function (pi: ExtensionAPI) {
       if (!isReviewerWritablePath(path, cwd)) {
         return {
           block: true,
-          reason: `Reviewer can only modify coordination artifacts under .gsd/ or docs/. Path blocked: ${path}`,
+          reason: getReviewerWriteBlockReason(path, cwd),
         };
       }
       return;

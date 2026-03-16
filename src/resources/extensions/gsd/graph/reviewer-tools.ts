@@ -9,6 +9,8 @@
 import { Type } from "@sinclair/typebox";
 import { GraphStore } from "./store.js";
 import type { TaskNode } from "./types.js";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 function textResult(text: string) {
   return { content: [{ type: "text" as const, text }], details: {} };
@@ -16,6 +18,8 @@ function textResult(text: string) {
 
 export function createReviewerTools(graphDir: string, reviewerId: string) {
   const graph = new GraphStore(graphDir);
+  const handoffsDir = join(graphDir, "handoffs");
+  mkdirSync(handoffsDir, { recursive: true });
 
   const collectDescendants = (taskId: string): Set<string> => {
     const visited = new Set<string>();
@@ -310,5 +314,54 @@ export function createReviewerTools(graphDir: string, reviewerId: string) {
     },
   };
 
-  return [closeTask, deleteTask, reparentTask, resolveBlocker, deleteBlocker, queryGraph, listTasks, listBlockers];
+  const emitHandoff = {
+    name: "graph_emit_handoff",
+    label: "Emit Role-Boundary Handoff",
+    description: "Write a structured handoff artifact when reviewer authority blocks requested work (e.g. task/blocker creation owned by coder role).",
+    parameters: Type.Object({
+      attemptedAction: Type.String({ description: "Action that was requested but blocked in this reviewer session." }),
+      requiredRole: Type.String({ description: "Role required to complete the blocked action, usually 'coder'." }),
+      reason: Type.String({ description: "Why this action is blocked in current role." }),
+      payload: Type.String({ description: "Minimal handoff payload (exact records/changes needed)." }),
+      evidence: Type.Optional(Type.Array(Type.String({ description: "Supporting evidence references (file:line, tool errors, etc.)." }))),
+    }),
+    async execute(
+      _toolCallId: string,
+      params: { attemptedAction: string; requiredRole: string; reason: string; payload: string; evidence?: string[] },
+    ) {
+      const now = new Date();
+      const iso = now.toISOString();
+      const stamp = iso.replace(/[-:]/g, "").replace(/\..+/, "");
+      const entropy = Math.random().toString(36).slice(2, 8);
+      const id = `H-${stamp}-${entropy}`;
+      const path = join(handoffsDir, `${id}.md`);
+      const evidence = params.evidence ?? [];
+
+      const content = `---
+id: ${id}
+status: open
+from_role: reviewer
+to_role: ${params.requiredRole}
+creator: ${reviewerId}
+created_at: ${iso}
+attempted_action: ${params.attemptedAction}
+denied_operation: role-boundary
+---
+
+## Why blocked
+${params.reason}
+
+## Minimal handoff payload
+${params.payload}
+
+## Evidence
+${evidence.length > 0 ? evidence.map((e) => `- ${e}`).join("\n") : "- (none provided)"}
+`;
+
+      writeFileSync(path, content);
+      return textResult(`ROLE-BOUNDARY BLOCKED handoff recorded: ${id}\nPath: ${path}\nNext: hand this artifact to a ${params.requiredRole} session.`);
+    },
+  };
+
+  return [closeTask, deleteTask, reparentTask, resolveBlocker, deleteBlocker, queryGraph, listTasks, listBlockers, emitHandoff];
 }

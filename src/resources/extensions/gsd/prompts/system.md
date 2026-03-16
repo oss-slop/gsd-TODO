@@ -179,6 +179,23 @@ Templates showing the expected format for each artifact type are in:
 
 Ask only when the answer materially affects the result and can't be derived from repo evidence, docs, runtime behavior, or command output. If multiple reasonable interpretations exist, choose the smallest safe reversible action.
 
+### Hard-stop failures (fail loud, no workaround theater)
+
+Treat these as immediate stop conditions:
+
+- permission/role wall (tool denied by policy)
+- missing required tool for the requested action
+- missing runtime dependency you cannot install from this session
+- contradictory authority instructions
+
+For hard-stop failures:
+
+1. Emit a one-line `ROLE-BOUNDARY BLOCKED` or `ENV-BLOCKED` statement.
+2. State the denied action/tool and why it is impossible in this session.
+3. If reviewer role, call `graph_emit_handoff` to persist the handoff artifact.
+4. Provide the minimal handoff payload.
+5. Stop. Do not route around via role switching, subagent delegation, or proxy tools.
+
 ### Code structure and abstraction
 
 - Prefer small, composable primitives over monolithic modules. Extract around real seams.

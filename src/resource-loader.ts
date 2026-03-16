@@ -93,6 +93,15 @@ function getManagedResourceManifestPath(agentDir: string): string {
   return join(agentDir, resourceVersionManifestName)
 }
 
+function hasRequiredGsdResources(agentDir: string): boolean {
+  const requiredPaths = [
+    join(agentDir, 'extensions', 'gsd', 'templates', 'task.md'),
+    join(agentDir, 'extensions', 'gsd', 'templates', 'blocker.md'),
+    join(agentDir, 'extensions', 'gsd', 'prompts', 'graph-schema.md'),
+  ]
+  return requiredPaths.every((p) => existsSync(p))
+}
+
 function getBundledGsdVersion(): string {
   try {
     const pkg = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8'))
@@ -154,7 +163,7 @@ export function initResources(agentDir: string): void {
   // Skip resource sync when versions match — saves ~128ms of cpSync per launch
   const currentVersion = getBundledGsdVersion()
   const managedVersion = readManagedResourceVersion(agentDir)
-  if (managedVersion && managedVersion === currentVersion) {
+  if (managedVersion && managedVersion === currentVersion && hasRequiredGsdResources(agentDir)) {
     return
   }
 

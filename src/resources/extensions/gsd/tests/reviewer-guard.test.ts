@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isReviewerWritablePath, shouldBlockReviewerBash, shouldBlockReviewerTool } from "../index.ts";
+import { getReviewerWriteBlockReason, isReviewerWritablePath, shouldBlockReviewerBash, shouldBlockReviewerTool } from "../index.ts";
 
 test("reviewer-write-guard: allows writes under .gsd/", () => {
   const cwd = "/tmp/project";
-  assert.equal(isReviewerWritablePath(".gsd/graph/tasks/T-1.md", cwd), true);
+  assert.equal(isReviewerWritablePath(".gsd/review/notes.md", cwd), true);
   assert.equal(isReviewerWritablePath("/tmp/project/.gsd/notes.md", cwd), true);
 });
 
@@ -18,6 +18,14 @@ test("reviewer-write-guard: blocks product code paths", () => {
   const cwd = "/tmp/project";
   assert.equal(isReviewerWritablePath("src/main.ts", cwd), false);
   assert.equal(isReviewerWritablePath("../other-repo/file.ts", cwd), false);
+});
+
+test("reviewer-write-guard: blocks direct graph writes", () => {
+  const cwd = "/tmp/project";
+  assert.equal(isReviewerWritablePath(".gsd/graph/tasks/T-1.md", cwd), false);
+  const reason = getReviewerWriteBlockReason(".gsd/graph/tasks/T-1.md", cwd);
+  assert.match(reason, /ROLE-BOUNDARY BLOCKED/i);
+  assert.match(reason, /graph_emit_handoff/i);
 });
 
 test("reviewer-bash-guard: allows read-only and verification commands", () => {
@@ -61,6 +69,12 @@ test("reviewer-tool-guard: blocks async_bash", () => {
   const result = shouldBlockReviewerTool("async_bash");
   assert.equal(result.block, true);
   assert.match(result.reason || "", /async_bash/i);
+});
+
+test("reviewer-tool-guard: blocks subagent", () => {
+  const result = shouldBlockReviewerTool("subagent");
+  assert.equal(result.block, true);
+  assert.match(result.reason || "", /subagent/i);
 });
 
 test("reviewer-tool-guard: allows unrelated tool names", () => {

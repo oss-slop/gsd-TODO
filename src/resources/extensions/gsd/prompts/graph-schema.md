@@ -13,6 +13,7 @@ This schema is tool-owned context. It is injected into your system prompt.
 .gsd/graph/
   tasks/T-*.md
   blockers/B-*.md
+  handoffs/H-*.md
 ```
 
 ### Task record
@@ -54,6 +55,25 @@ Body sections (required):
 - `### Evidence` (bullet list)
 - `### Suggested next action`
 
+### Handoff record
+
+Frontmatter keys:
+
+- `id`: `H-*`
+- `status`: `open | acknowledged | superseded`
+- `from_role`: role that was blocked
+- `to_role`: role required to execute
+- `creator`: agent id
+- `created_at`: ISO timestamp
+- `attempted_action`: blocked action summary
+- `denied_operation`: short denied operation key
+
+Body sections (required):
+
+- `## Why blocked`
+- `## Minimal handoff payload`
+- `## Evidence`
+
 ### Authority boundaries
 
 - Coder authority:
@@ -65,6 +85,18 @@ Body sections (required):
   - resolve/delete blockers
   - delete/reparent tasks
   - restructure graph
+
+### Role-lock rule
+
+- An agent must not switch authority by assertion ("I'll act as coder now").
+- An agent must not delegate to subagents to bypass role boundaries.
+- Reviewers must not create/edit raw graph records via filesystem writes (`write`/`edit` on `.gsd/graph/*`).
+- If role permissions prevent required work, emit a `ROLE-BOUNDARY BLOCKED` report with:
+  - attempted action
+  - denied tool/operation
+  - required role (`coder` or `reviewer`)
+  - minimal handoff payload
+  - persisted handoff artifact via `graph_emit_handoff`
 
 ### Invariants
 

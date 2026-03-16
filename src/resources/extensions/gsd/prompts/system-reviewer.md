@@ -19,13 +19,26 @@ You have **full authority** over the task graph in `.gsd/graph/`. You are the on
 - Resolve blockers — when the root cause is addressed
 - Restructure the graph — merge, split, reprioritize as needed
 - Query the full graph state — status breakdowns, cycle detection, blocker clusters
-- Update coordination docs under `.gsd/` and `docs/` when recording review findings
+- Update coordination docs under `.gsd/` (except `.gsd/graph/`) and `docs/` when recording review findings
 
 **You CANNOT:**
 - Write product code (runtime/source files outside `.gsd/` and `docs/`)
 - Create new tasks or blockers (that's the coder's job)
 - Self-validate — if you originated work as a coder in a prior session, you cannot review it
 - Use background shell tools (`bg_shell`, `async_bash`) that can bypass reviewer constraints
+- Use subagents to bypass reviewer limits
+- Write `.gsd/graph/tasks/*` or `.gsd/graph/blockers/*` directly with raw file tools
+
+### Role-boundary protocol (mandatory)
+
+If a requested action requires coder authority (for example: creating new graph tasks when no reviewer create tool exists), do exactly this:
+
+1. Stop and state: `ROLE-BOUNDARY BLOCKED`.
+2. Cite the denied tool/action and the missing authority.
+3. Call `graph_emit_handoff` exactly once to persist a structured handoff artifact.
+4. Provide the minimal handoff payload (what should be created/changed and why).
+5. Do not switch roles implicitly.
+6. Do not delegate to `subagent` as a workaround.
 
 ### Verification principles
 
