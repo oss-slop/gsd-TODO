@@ -51,7 +51,7 @@ import {
   buildSliceFileName, buildMilestoneFileName, gsdRoot, resolveMilestonePath,
 } from "./paths.js";
 import { Key } from "@gsd/pi-tui";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { shortcutDesc } from "../shared/terminal.js";
 import { Text } from "@gsd/pi-tui";
@@ -81,6 +81,184 @@ export function shouldBlockContextWrite(
     block: true,
     reason: `Blocked: Cannot write to milestone CONTEXT.md during discussion phase without depth verification. Call ask_user_questions with question id "depth_verification" first to confirm discussion depth before writing context.`,
   };
+}
+
+const REVIEWER_WRITABLE_DIRS = [".gsd", "docs"];
+const REVIEWER_BLOCKED_TOOL_NAMES = new Set([
+  "apply_patch",
+  "bg_shell",
+  "async_bash",
+]);
+const REVIEWER_SAFE_COMMANDS = new Set([
+  "rg", "grep", "find", "ls", "cat", "head", "tail", "wc", "cut", "sort", "uniq",
+  "pwd", "which", "realpath", "stat", "tree", "sed", "awk",
+  "npm", "pnpm", "bun", "node", "zig", "pytest", "go", "cargo", "ctest", "make",
+  "git",
+]);
+const REVIEWER_SAFE_GIT_SUBCOMMANDS = new Set([
+  "status", "diff", "log", "show", "grep", "branch", "rev-parse", "describe",
+  "remote", "ls-files", "blame", "merge-base", "tag",
+]);
+
+function isWithinPath(rootAbs: string, targetAbs: string): boolean {
+  const rel = relative(rootAbs, targetAbs);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+export function isReviewerWritablePath(inputPath: string, cwd: string): boolean {
+  const targetAbs = resolve(cwd, inputPath);
+  for (const dir of REVIEWER_WRITABLE_DIRS) {
+    const rootAbs = resolve(cwd, dir);
+    if (isWithinPath(rootAbs, targetAbs)) return true;
+  }
+  return false;
+}
+
+function firstExecutableToken(tokens: string[]): { token: string; index: number } | null {
+  let i = 0;
+  while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=.*/.test(tokens[i])) i++;
+  if (i >= tokens.length) return null;
+  return { token: tokens[i], index: i };
+}
+
+function isAllowedNpmCommand(tokens: string[], i: number): boolean {
+  const sub = tokens[i + 1];
+  if (!sub) return false;
+  if (sub === "test") return true;
+  if (sub === "run") {
+    const script = (tokens[i + 2] || "").toLowerCase();
+    return script.startsWith("test") || script.startsWith("lint") || script.startsWith("check") || script.startsWith("build") || script.startsWith("typecheck");
+  }
+  return false;
+}
+
+function isAllowedPnpmCommand(tokens: string[], i: number): boolean {
+  const sub = tokens[i + 1];
+  if (!sub) return false;
+  if (sub === "test") return true;
+  if (sub === "run") {
+    const script = (tokens[i + 2] || "").toLowerCase();
+    return script.startsWith("test") || script.startsWith("lint") || script.startsWith("check") || script.startsWith("build") || script.startsWith("typecheck");
+  }
+  return false;
+}
+
+function isAllowedBunCommand(tokens: string[], i: number): boolean {
+  const sub = tokens[i + 1];
+  if (!sub) return false;
+  if (sub === "test") return true;
+  if (sub === "run") {
+    const script = (tokens[i + 2] || "").toLowerCase();
+    return script.startsWith("test") || script.startsWith("lint") || script.startsWith("check") || script.startsWith("build") || script.startsWith("typecheck");
+  }
+  return false;
+}
+
+function isAllowedNodeCommand(tokens: string[], i: number): boolean {
+  const sub = tokens[i + 1] || "";
+  return sub === "--test";
+}
+
+function isAllowedMakeCommand(tokens: string[], i: number): boolean {
+  const sub = (tokens[i + 1] || "").toLowerCase();
+  return sub.startsWith("test") || sub.startsWith("lint") || sub.startsWith("check") || sub.startsWith("build");
+}
+
+function isAllowedGoCommand(tokens: string[], i: number): boolean {
+  return (tokens[i + 1] || "") === "test";
+}
+
+function isAllowedCargoCommand(tokens: string[], i: number): boolean {
+  return (tokens[i + 1] || "") === "test";
+}
+
+function isAllowedGitCommand(tokens: string[], i: number): boolean {
+  const sub = tokens[i + 1] || "";
+  return REVIEWER_SAFE_GIT_SUBCOMMANDS.has(sub);
+}
+
+function isCommandSegmentSafe(segment: string): { allowed: boolean; reason?: string } {
+  if (!segment.trim()) return { allowed: true };
+  if (/[<>|`]/.test(segment) || segment.includes("$(")) {
+    return { allowed: false, reason: "Pipes, redirects, and command substitution are blocked for reviewer bash." };
+  }
+
+  const tokens = segment.trim().split(/\s+/).filter(Boolean);
+  const first = firstExecutableToken(tokens);
+  if (!first) return { allowed: false, reason: "Could not parse reviewer bash command." };
+
+  const cmd = first.token;
+  const i = first.index;
+  if (!REVIEWER_SAFE_COMMANDS.has(cmd)) {
+    return { allowed: false, reason: `Reviewer bash command "${cmd}" is not allowed.` };
+  }
+
+  if (cmd === "sed" && tokens.includes("-i")) {
+    return { allowed: false, reason: 'Reviewer bash cannot use in-place edit flags like "sed -i". Use write/edit in .gsd/ or docs/ instead.' };
+  }
+  if (cmd === "git" && !isAllowedGitCommand(tokens, i)) {
+    return { allowed: false, reason: 'Reviewer bash only allows read-only git subcommands (status/diff/log/show/etc.).' };
+  }
+  if (cmd === "npm" && !isAllowedNpmCommand(tokens, i)) {
+    return { allowed: false, reason: 'Reviewer npm usage is limited to test/lint/check/build/typecheck commands.' };
+  }
+  if (cmd === "pnpm" && !isAllowedPnpmCommand(tokens, i)) {
+    return { allowed: false, reason: 'Reviewer pnpm usage is limited to test/lint/check/build/typecheck commands.' };
+  }
+  if (cmd === "bun" && !isAllowedBunCommand(tokens, i)) {
+    return { allowed: false, reason: 'Reviewer bun usage is limited to test/lint/check/build/typecheck commands.' };
+  }
+  if (cmd === "node" && !isAllowedNodeCommand(tokens, i)) {
+    return { allowed: false, reason: 'Reviewer node usage is limited to "node --test ...".' };
+  }
+  if (cmd === "go" && !isAllowedGoCommand(tokens, i)) {
+    return { allowed: false, reason: 'Reviewer go usage is limited to "go test".' };
+  }
+  if (cmd === "cargo" && !isAllowedCargoCommand(tokens, i)) {
+    return { allowed: false, reason: 'Reviewer cargo usage is limited to "cargo test".' };
+  }
+  if (cmd === "make" && !isAllowedMakeCommand(tokens, i)) {
+    return { allowed: false, reason: 'Reviewer make usage is limited to test/lint/check/build targets.' };
+  }
+
+  return { allowed: true };
+}
+
+export function shouldBlockReviewerBash(command: string): { block: boolean; reason?: string } {
+  const segments = command
+    .split(/&&|\|\||;/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (segments.length === 0) return { block: true, reason: "Reviewer bash command is empty." };
+
+  for (const segment of segments) {
+    const result = isCommandSegmentSafe(segment);
+    if (!result.allowed) return { block: true, reason: result.reason };
+  }
+  return { block: false };
+}
+
+export function shouldBlockReviewerTool(toolName: string): { block: boolean; reason?: string } {
+  if (!REVIEWER_BLOCKED_TOOL_NAMES.has(toolName)) return { block: false };
+  if (toolName === "apply_patch") {
+    return {
+      block: true,
+      reason: "Reviewer cannot use apply_patch directly. Use write/edit under .gsd/ or docs/ only.",
+    };
+  }
+  if (toolName === "bg_shell") {
+    return {
+      block: true,
+      reason: "Reviewer cannot use bg_shell. Use bash for read/verify commands only.",
+    };
+  }
+  if (toolName === "async_bash") {
+    return {
+      block: true,
+      reason: "Reviewer cannot use async_bash. Use bash for read/verify commands only.",
+    };
+  }
+  return { block: true, reason: `Reviewer cannot use tool "${toolName}".` };
 }
 
 // ── ASCII logo ────────────────────────────────────────────────────────────
@@ -503,16 +681,36 @@ export default function (pi: ExtensionAPI) {
     if (result.block) return result;
   });
 
-  // ── tool_call: block write/edit/bash for reviewer role ──────────────────
+  // ── tool_call: reviewer guardrails (write/edit scope + safe bash subset) ──
   pi.on("tool_call", async (event) => {
     if ((process.env.GSD_ROLE || "coder") !== "reviewer") return;
-    const blocked = ["write", "edit", "bash"];
-    if (blocked.includes(event.toolName)) {
-      // Allow graph_* tools (they have their own names) — block raw file/shell tools
-      return {
-        block: true,
-        reason: `Reviewer role cannot use "${event.toolName}". Reviewers have read-only access to the codebase. Use graph_* tools to manage the task graph.`,
-      };
+    const cwd = process.cwd();
+
+    if (isToolCallEventType("write", event) || isToolCallEventType("edit", event)) {
+      const path = event.input.path;
+      if (!isReviewerWritablePath(path, cwd)) {
+        return {
+          block: true,
+          reason: `Reviewer can only modify coordination artifacts under .gsd/ or docs/. Path blocked: ${path}`,
+        };
+      }
+      return;
+    }
+
+    if (isToolCallEventType("bash", event)) {
+      const result = shouldBlockReviewerBash(event.input.command);
+      if (result.block) {
+        return {
+          block: true,
+          reason: `${result.reason} Reviewers may use bash for read/verify commands and use write/edit for .gsd/ or docs/.`,
+        };
+      }
+      return;
+    }
+
+    const toolBlock = shouldBlockReviewerTool(event.toolName);
+    if (toolBlock.block) {
+      return { block: true, reason: toolBlock.reason ?? `Reviewer cannot use tool "${event.toolName}".` };
     }
   });
 
