@@ -34,6 +34,8 @@ if (firstArg === '--help' || firstArg === '-h') {
   process.stdout.write('  --mode <text|json|rpc>   Output mode (default: interactive)\n')
   process.stdout.write('  --print, -p              Single-shot print mode\n')
   process.stdout.write('  --continue, -c           Resume the most recent session\n')
+  process.stdout.write('  --role <coder|reviewer>  Set agent role (default: coder)\n')
+  process.stdout.write('  --graph-dir <path>       Graph storage path (default: .gsd/graph)\n')
   process.stdout.write('  --model <id>             Override model (e.g. claude-opus-4-6)\n')
   process.stdout.write('  --no-session             Disable session persistence\n')
   process.stdout.write('  --extension <path>       Load additional extension\n')
