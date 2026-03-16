@@ -8,6 +8,12 @@ custom_instructions: []
 models: {}
 skill_discovery:
 auto_supervisor: {}
+budget_ceiling:
+budget_enforcement:
+context_pause_threshold:
+graph_backlog_pause_threshold:
+graph_blocker_pause_threshold:
+graph_gate_enforcement:
 git:
   auto_push:
   push_branches:

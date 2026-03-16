@@ -66,8 +66,7 @@ import {
   initMetrics, resetMetrics, snapshotUnitMetrics, getLedger,
   getProjectTotals, formatCost, formatTokenCount,
 } from "./metrics.js";
-import { join } from "node:path";
-import { sep as pathSep } from "node:path";
+import { isAbsolute, join, sep as pathSep } from "node:path";
 import { homedir } from "node:os";
 import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync, statSync } from "node:fs";
 import { nativeIsRepo, nativeInit, nativeAddPaths, nativeCommit } from "./native-git-bridge.js";
@@ -109,6 +108,7 @@ import {
   reconcileMergeState,
 } from "./auto-recovery.js";
 import { resolveDispatch, resetRewriteCircuitBreaker } from "./auto-dispatch.js";
+import { GraphStore } from "./graph/store.js";
 import {
   type AutoDashboardData,
   updateProgressWidget as _updateProgressWidget,
@@ -251,6 +251,71 @@ export function getBudgetEnforcementAction(
   if (enforcement === "halt") return "halt";
   if (enforcement === "pause") return "pause";
   return "warn";
+}
+
+type GraphGateAction = "warn" | "pause" | "halt";
+
+interface GraphBacklogSnapshot {
+  graphDir: string;
+  openTasks: number;
+  openBlockers: number;
+}
+
+interface GraphGateResult {
+  action: GraphGateAction;
+  message: string;
+}
+
+function resolveGraphDir(currentBasePath: string): string {
+  const configuredGraphDir = process.env.GSD_GRAPH_DIR?.trim();
+  if (!configuredGraphDir) return join(currentBasePath, ".gsd", "graph");
+  if (isAbsolute(configuredGraphDir)) return configuredGraphDir;
+  return join(currentBasePath, configuredGraphDir);
+}
+
+function readGraphBacklogSnapshot(currentBasePath: string): GraphBacklogSnapshot | null {
+  const graphDir = resolveGraphDir(currentBasePath);
+  if (!existsSync(graphDir)) return null;
+
+  const graph = new GraphStore(graphDir);
+  return {
+    graphDir,
+    openTasks: graph.openTasks().length,
+    openBlockers: graph.openBlockers().length,
+  };
+}
+
+function evaluateGraphBacklogGate(
+  currentBasePath: string,
+  state: GSDState,
+  prefs: GSDPreferences | undefined,
+): GraphGateResult | null {
+  const taskThreshold = prefs?.graph_backlog_pause_threshold ?? 0;
+  const blockerThreshold = prefs?.graph_blocker_pause_threshold ?? 0;
+  if (taskThreshold <= 0 && blockerThreshold <= 0) return null;
+
+  // Only gate when the linear pipeline has no executable task.
+  const noExecutableTask = state.phase !== "executing" || !state.activeTask;
+  if (!noExecutableTask) return null;
+
+  const snapshot = readGraphBacklogSnapshot(currentBasePath);
+  if (!snapshot) return null;
+
+  const taskExceeded = taskThreshold > 0 && snapshot.openTasks >= taskThreshold;
+  const blockerExceeded = blockerThreshold > 0 && snapshot.openBlockers >= blockerThreshold;
+  if (!taskExceeded && !blockerExceeded) return null;
+
+  const enforcement = prefs?.graph_gate_enforcement ?? "pause";
+  const action: GraphGateAction = enforcement === "halt" ? "halt" : enforcement === "warn" ? "warn" : "pause";
+
+  const reasons: string[] = [];
+  if (taskExceeded) reasons.push(`open_tasks=${snapshot.openTasks} (threshold ${taskThreshold})`);
+  if (blockerExceeded) reasons.push(`open_blockers=${snapshot.openBlockers} (threshold ${blockerThreshold})`);
+
+  return {
+    action,
+    message: `Backlog gate: no executable linear task (phase=${state.phase}) and graph pressure is high: ${reasons.join(", ")}. Reconcile .gsd/graph before continuing.`,
+  };
 }
 
 /** Wrapper: register SIGTERM handler and store reference. */
@@ -1371,6 +1436,27 @@ async function dispatchNextUnit(
       await pauseAuto(ctx, pi);
       return;
     }
+  }
+
+  // Graph backlog gate — when the linear pipeline has no executable task and
+  // graph TODO pressure is high, force explicit reconciliation instead of
+  // silently continuing to create more planning churn.
+  const graphGate = evaluateGraphBacklogGate(basePath, state, prefs);
+  if (graphGate) {
+    if (graphGate.action === "halt") {
+      ctx.ui.notify(`${graphGate.message} Stopping auto-mode.`, "error");
+      sendDesktopNotification("GSD", "Graph backlog gate triggered — auto-mode stopped.", "error", "attention");
+      await stopAuto(ctx, pi);
+      return;
+    }
+    if (graphGate.action === "pause") {
+      ctx.ui.notify(`${graphGate.message} Pausing auto-mode — reconcile and run /gsd auto to continue.`, "warning");
+      sendDesktopNotification("GSD", "Graph backlog gate triggered — auto-mode paused.", "warning", "attention");
+      await pauseAuto(ctx, pi);
+      return;
+    }
+    ctx.ui.notify(`${graphGate.message} Continuing (enforcement: warn).`, "warning");
+    sendDesktopNotification("GSD", "Graph backlog gate warning.", "warning", "attention");
   }
 
   // ── Secrets re-check gate — runs before every dispatch, not just at startAuto ──

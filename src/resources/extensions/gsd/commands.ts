@@ -616,7 +616,10 @@ function serializePreferencesToFrontmatter(prefs: Record<string, unknown>): stri
   const orderedKeys = [
     "version", "always_use_skills", "prefer_skills", "avoid_skills",
     "skill_rules", "custom_instructions", "models", "skill_discovery",
-    "auto_supervisor", "uat_dispatch", "unique_milestone_ids", "budget_ceiling", "remote_questions", "git",
+    "auto_supervisor", "uat_dispatch", "unique_milestone_ids",
+    "budget_ceiling", "budget_enforcement", "context_pause_threshold",
+    "graph_backlog_pause_threshold", "graph_blocker_pause_threshold", "graph_gate_enforcement",
+    "remote_questions", "git",
   ];
 
   const seen = new Set<string>();

@@ -31,6 +31,9 @@ const KNOWN_PREFERENCE_KEYS = new Set<string>([
   "budget_ceiling",
   "budget_enforcement",
   "context_pause_threshold",
+  "graph_backlog_pause_threshold",
+  "graph_blocker_pause_threshold",
+  "graph_gate_enforcement",
   "notifications",
   "remote_questions",
   "git",
@@ -117,6 +120,9 @@ export interface GSDPreferences {
   budget_ceiling?: number;
   budget_enforcement?: BudgetEnforcementMode;
   context_pause_threshold?: number;
+  graph_backlog_pause_threshold?: number;
+  graph_blocker_pause_threshold?: number;
+  graph_gate_enforcement?: BudgetEnforcementMode;
   notifications?: NotificationPreferences;
   remote_questions?: RemoteQuestionsConfig;
   git?: GitPreferences;
@@ -686,6 +692,9 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
     budget_ceiling: override.budget_ceiling ?? base.budget_ceiling,
     budget_enforcement: override.budget_enforcement ?? base.budget_enforcement,
     context_pause_threshold: override.context_pause_threshold ?? base.context_pause_threshold,
+    graph_backlog_pause_threshold: override.graph_backlog_pause_threshold ?? base.graph_backlog_pause_threshold,
+    graph_blocker_pause_threshold: override.graph_blocker_pause_threshold ?? base.graph_blocker_pause_threshold,
+    graph_gate_enforcement: override.graph_gate_enforcement ?? base.graph_gate_enforcement,
     notifications: (base.notifications || override.notifications)
       ? { ...(base.notifications ?? {}), ...(override.notifications ?? {}) }
       : undefined,
@@ -812,6 +821,40 @@ export function validatePreferences(preferences: GSDPreferences): {
       validated.context_pause_threshold = Number(raw);
     } else {
       errors.push("context_pause_threshold must be a finite number");
+    }
+  }
+
+  // ─── Graph Backlog Pause Threshold ──────────────────────────────────
+  if (preferences.graph_backlog_pause_threshold !== undefined) {
+    const raw = preferences.graph_backlog_pause_threshold;
+    if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) {
+      validated.graph_backlog_pause_threshold = raw;
+    } else if (typeof raw === "string" && Number.isFinite(Number(raw)) && Number(raw) >= 0) {
+      validated.graph_backlog_pause_threshold = Number(raw);
+    } else {
+      errors.push("graph_backlog_pause_threshold must be a finite number >= 0");
+    }
+  }
+
+  // ─── Graph Blocker Pause Threshold ──────────────────────────────────
+  if (preferences.graph_blocker_pause_threshold !== undefined) {
+    const raw = preferences.graph_blocker_pause_threshold;
+    if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) {
+      validated.graph_blocker_pause_threshold = raw;
+    } else if (typeof raw === "string" && Number.isFinite(Number(raw)) && Number(raw) >= 0) {
+      validated.graph_blocker_pause_threshold = Number(raw);
+    } else {
+      errors.push("graph_blocker_pause_threshold must be a finite number >= 0");
+    }
+  }
+
+  // ─── Graph Gate Enforcement ─────────────────────────────────────────
+  if (preferences.graph_gate_enforcement !== undefined) {
+    const validModes = new Set(["warn", "pause", "halt"]);
+    if (typeof preferences.graph_gate_enforcement === "string" && validModes.has(preferences.graph_gate_enforcement)) {
+      validated.graph_gate_enforcement = preferences.graph_gate_enforcement;
+    } else {
+      errors.push(`graph_gate_enforcement must be one of: warn, pause, halt`);
     }
   }
 

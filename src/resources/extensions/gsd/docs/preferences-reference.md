@@ -100,6 +100,24 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `idle_timeout_minutes`: minutes of inactivity before the supervisor intervenes (default: 10).
   - `hard_timeout_minutes`: minutes before the supervisor forces termination (default: 30).
 
+- `budget_ceiling`: maximum allowed spend for the current project before enforcement triggers. Omit to disable budget gating.
+
+- `budget_enforcement`: behavior when `budget_ceiling` is reached. Valid values:
+  - `warn` — notify but continue
+  - `pause` — pause auto-mode and require explicit resume
+  - `halt` — stop auto-mode
+
+- `context_pause_threshold`: context usage percentage at which auto-mode pauses (for example `85` pauses when context is at or above 85%). Omit or set `0` to disable.
+
+- `graph_backlog_pause_threshold`: open task count threshold for graph backlog gating. Applies only when there is no executable linear task. Omit or set `0` to disable.
+
+- `graph_blocker_pause_threshold`: open blocker count threshold for graph backlog gating. Applies only when there is no executable linear task. Omit or set `0` to disable.
+
+- `graph_gate_enforcement`: behavior when graph backlog gate triggers. Valid values:
+  - `warn` — notify but continue
+  - `pause` — pause auto-mode and require explicit resume
+  - `halt` — stop auto-mode
+
 - `git`: configures GSD's git behavior. All fields are optional — omit any to use defaults. Keys:
   - `auto_push`: boolean — automatically push commits to the remote after committing. Default: `false`.
   - `push_branches`: boolean — push the milestone branch to the remote after commits. Default: `false`.

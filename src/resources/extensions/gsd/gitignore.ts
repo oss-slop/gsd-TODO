@@ -175,7 +175,7 @@ export function ensurePreferences(basePath: string): boolean {
     return false;
   }
 
-  const template = `---
+const template = `---
 version: 1
 always_use_skills: []
 prefer_skills: []
@@ -183,8 +183,14 @@ avoid_skills: []
 skill_rules: []
 custom_instructions: []
 models: {}
-skill_discovery: {}
+skill_discovery:
 auto_supervisor: {}
+budget_ceiling:
+budget_enforcement:
+context_pause_threshold:
+graph_backlog_pause_threshold:
+graph_blocker_pause_threshold:
+graph_gate_enforcement:
 ---
 
 # GSD Skill Preferences
@@ -203,6 +209,8 @@ See \`~/.gsd/agent/extensions/gsd/docs/preferences-reference.md\` for full field
 - \`models\`: Model preferences for specific task types
 - \`skill_discovery\`: Automatic skill detection preferences
 - \`auto_supervisor\`: Supervision and gating rules for autonomous modes
+- \`graph_backlog_pause_threshold\` / \`graph_blocker_pause_threshold\`: pause/stop when backlog pressure is too high while no executable linear task exists
+- \`graph_gate_enforcement\`: \`warn\` | \`pause\` | \`halt\` behavior for the backlog gate
 - \`git\`: Git preferences — \`main_branch\` (default branch name for new repos, e.g., "main", "master", "trunk"), \`auto_push\`, \`snapshots\`, etc.
 
 ## Examples
@@ -223,4 +231,3 @@ custom_instructions:
   writeFileSync(preferencesPath, template, "utf-8");
   return true;
 }
-

@@ -273,7 +273,11 @@ export default function (pi: ExtensionAPI) {
 
     const role = process.env.GSD_ROLE || "coder";
     const rolePromptName = role === "reviewer" ? "system-reviewer" : "system-coder";
-    const systemContent = loadPrompt("system") + "\n\n" + loadPrompt(rolePromptName);
+    const systemContent = [
+      loadPrompt("system"),
+      loadPrompt(rolePromptName),
+      loadPrompt("graph-schema"),
+    ].join("\n\n");
     const loadedPreferences = loadEffectiveGSDPreferences();
     let preferenceBlock = "";
     if (loadedPreferences) {

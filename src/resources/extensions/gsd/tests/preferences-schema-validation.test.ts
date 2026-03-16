@@ -59,6 +59,9 @@ async function main(): Promise<void> {
       budget_ceiling: 100,
       budget_enforcement: "warn",
       context_pause_threshold: 0.8,
+      graph_backlog_pause_threshold: 25,
+      graph_blocker_pause_threshold: 8,
+      graph_gate_enforcement: "pause",
       notifications: { enabled: true },
       remote_questions: { channel: "slack", channel_id: "C123" },
       git: { auto_push: true },
@@ -94,6 +97,20 @@ async function main(): Promise<void> {
   }
 
   {
+    const prefs = { graph_backlog_pause_threshold: -1 } as unknown as GSDPreferences;
+    const { errors, preferences } = validatePreferences(prefs);
+    assertTrue(errors.some(e => e.includes("graph_backlog_pause_threshold")), "invalid graph_backlog_pause_threshold produces error");
+    assertEq(preferences.graph_backlog_pause_threshold, undefined, "invalid graph_backlog_pause_threshold falls back to undefined");
+  }
+
+  {
+    const prefs = { graph_gate_enforcement: "invalid" } as unknown as GSDPreferences;
+    const { errors, preferences } = validatePreferences(prefs);
+    assertTrue(errors.some(e => e.includes("graph_gate_enforcement")), "invalid graph_gate_enforcement produces error");
+    assertEq(preferences.graph_gate_enforcement, undefined, "invalid graph_gate_enforcement falls back to undefined");
+  }
+
+  {
     const prefs = { skill_discovery: "invalid-mode" } as unknown as GSDPreferences;
     const { errors, preferences } = validatePreferences(prefs);
     assertTrue(errors.some(e => e.includes("skill_discovery")), "invalid skill_discovery produces error");
@@ -110,6 +127,17 @@ async function main(): Promise<void> {
   {
     const { preferences } = validatePreferences({ context_pause_threshold: 0.75 });
     assertEq(preferences.context_pause_threshold, 0.75, "valid context_pause_threshold passes through");
+  }
+
+  {
+    const { preferences } = validatePreferences({
+      graph_backlog_pause_threshold: 12,
+      graph_blocker_pause_threshold: 4,
+      graph_gate_enforcement: "halt",
+    });
+    assertEq(preferences.graph_backlog_pause_threshold, 12, "valid graph_backlog_pause_threshold passes through");
+    assertEq(preferences.graph_blocker_pause_threshold, 4, "valid graph_blocker_pause_threshold passes through");
+    assertEq(preferences.graph_gate_enforcement, "halt", "valid graph_gate_enforcement passes through");
   }
 
   {
